@@ -1,0 +1,9 @@
+[submodule "vStreamKodi"]
+	path = vStreamKodi
+	url = https://github.com/Kodi-vStream/venom-xbmc-addons
+[submodule "KodiStub"]
+	path = KodiStub
+	url = https://github.com/romanvm/Kodistubs
+[submodule "addonServeur"]
+	path = addonServeur
+	url = https://github.com/Stremio/addon-helloworld
