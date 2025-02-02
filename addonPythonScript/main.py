@@ -133,8 +133,8 @@ def contructRqst(requestId):
 
 
 def callTraitementWebSite(args):
-    bSeriesRqst, nSaison, nEpisode, sysArg = args
-    cmd_args = [('1' if bSeriesRqst else '0'), nSaison, nEpisode, "\"" + sysArg + "\""]
+    requestId, bSeriesRqst, nSaison, nEpisode, sysArg = args
+    cmd_args = [requestId, ('1' if bSeriesRqst else '0'), nSaison, nEpisode, "\"" + sysArg + "\""]
     # Récupère le chemin absolu du script courant
     script_path = os.path.abspath(__file__)
     # Récupère le répertoire contenant ce script
@@ -169,7 +169,7 @@ def main():
         stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
 
         # Exécuter les traitements en parallèle avec ProcessPoolExecutor
-        args_list = [(bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
+        args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
         with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
             results = executor.map(callTraitementWebSite, args_list)
 

@@ -3,7 +3,7 @@ const { spawn } = require("child_process");
 
 const manifest = { 
     "id": "org.stremio.dtstream",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "name": "vStreamIO",
     "description": "vStream addon for StremIO",
     "resources": [
