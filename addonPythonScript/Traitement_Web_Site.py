@@ -7,10 +7,10 @@ import sqlite3
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
 db_name = ""
-if (parent_dir + '\\vStreamKodi\\plugin.video.vstream') not in sys.path:
-    sys.path.insert(0, parent_dir + '\\vStreamKodi\\plugin.video.vstream')
-if (parent_dir + '\\KodiStub') not in sys.path:
-    sys.path.insert(0, parent_dir + '\\KodiStub')
+if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
+    sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
+if (parent_dir + '/KodiStub') not in sys.path:
+    sys.path.insert(0, parent_dir + '/KodiStub')
 
 import re
 import xbmcplugin
@@ -48,7 +48,7 @@ def initDB(nomDuSite):
     global parent_dir
     global db_name
     b_db_already_exist = False
-    db_dir = f"{parent_dir}\\db\\"
+    db_dir = f"{parent_dir}/db/"
     if not os.path.exists(db_dir):
         os.makedirs(db_dir)
     if nomDuSite:

@@ -397,7 +397,7 @@ def exists(path: str) -> bool:
         ..
     """
     import os
-    path = path.replace('/', '\\')
+    #path = path.replace('/', '\\')
     # test du chemin
     if not os.path.isfile(path):
         return False

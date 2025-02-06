@@ -8,10 +8,10 @@ __DEBUG__ = False
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
-if (parent_dir + '\\vStreamKodi\\plugin.video.vstream') not in sys.path:
-    sys.path.insert(0, parent_dir + '\\vStreamKodi\\plugin.video.vstream')
-if (parent_dir + '\\KodiStub') not in sys.path:
-    sys.path.insert(0, parent_dir + '\\KodiStub')
+if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
+    sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
+if (parent_dir + '/KodiStub') not in sys.path:
+    sys.path.insert(0, parent_dir + '/KodiStub')
 
 from resources.lib.search import cSearch
 from imdb import IMDb
@@ -138,7 +138,7 @@ def callTraitementWebSite(args):
     # Récupère le chemin absolu du script courant
     script_path = os.path.abspath(__file__)
     # Récupère le répertoire contenant ce script
-    script_dir = os.path.dirname(script_path) + '\\'
+    script_dir = os.path.dirname(script_path) + '/'
     result = subprocess.run(['python', script_dir + 'Traitement_Web_Site.py'] + cmd_args, capture_output=True, text=True)
     output = f"Sortie du processus pour {cmd_args} :\n{result.stdout}"
     try:
@@ -179,6 +179,7 @@ def main():
             if output_list:
                 final_list.extend(output_list)
 
+        final_list.sort()
         print(final_list)
     else:
         # Cas où il y a trop d'arguments
