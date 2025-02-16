@@ -22,8 +22,9 @@ def getContructRqst():
     nSaison = sys.argv[3] #sur ecriture
     nEpisode = sys.argv[4] #sur ecriture
     sysArg = sys.argv[5]
+    bMainRqstNewSearch = sys.argv[6]
 
-    return requestId, bSeriesRqst, nSaison, nEpisode, [(sysArg, False, False)]
+    return requestId, bSeriesRqst, nSaison, nEpisode, [(sysArg, False, False)], bMainRqstNewSearch
 
 bInit = True
 def callvStream():
@@ -138,12 +139,12 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode):
 
 def main():
     # Vérification des arguments passés au script
-    if len(sys.argv) == 6:
+    if len(sys.argv) == 7:
         bLastTraitement = False
         bSaisonAndEpisodCatched = False
         bSaisonCatched = False
 
-        requestId, bSeriesRqst, nSaison, nEpisode, stored_items = getContructRqst()
+        requestId, bSeriesRqst, nSaison, nEpisode, stored_items, bMainRqstNewSearch = getContructRqst()
 
         nomDuSite = getWebSiteName(stored_items)
         bcheckdbbefore = initDB(nomDuSite)
@@ -151,7 +152,7 @@ def main():
         if bcheckdbbefore:
             #la base db exist deja checker si la recherche a etait deja faite d'abord
             bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode)
-            if bOldSearchMatched and OldListedMatched:
+            if bOldSearchMatched and OldListedMatched and bMainRqstNewSearch == False:
                 stored_items = OldListedMatched
                 bSaisonCatched = True
 

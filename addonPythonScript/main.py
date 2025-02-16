@@ -8,6 +8,9 @@ __DEBUG__ = False
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
+
+db_name = "" #path db historique
+
 if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
     sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
 if (parent_dir + '/KodiStub') not in sys.path:
@@ -20,6 +23,8 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import ast
 import time
+import sqlite3
+from datetime import datetime, timedelta
 
 ################################## IMDb incapable de me dire si c'est un anime ou pas utilisation de BeautifulSoup pour catch les Tags et vérfier si "anime" est dedans ##########################################
 import requests
@@ -133,8 +138,8 @@ def contructRqst(requestId):
 
 
 def callTraitementWebSite(args):
-    requestId, bSeriesRqst, nSaison, nEpisode, sysArg = args
-    cmd_args = [requestId, ('1' if bSeriesRqst else '0'), nSaison, nEpisode, "\"" + sysArg + "\""]
+    requestId, bSeriesRqst, nSaison, nEpisode, sysArg, bMainRqstNewSearch = args
+    cmd_args = [requestId, ('1' if bSeriesRqst else '0'), nSaison, nEpisode, "\"" + sysArg + "\"", ('1' if bMainRqstNewSearch else '0')]
     # Récupère le chemin absolu du script courant
     script_path = os.path.abspath(__file__)
     # Récupère le répertoire contenant ce script
@@ -154,22 +159,152 @@ def callTraitementWebSite(args):
 
     return output_list
 
+def initDB(nomDb):
+    global parent_dir
+    global db_name
+    b_db_already_exist = False
+    db_dir = f"{parent_dir}/db/"
+    if not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+    if nomDb:
+        db_name = f"{db_dir}{nomDb}.db"
+        if not os.path.exists(db_name):
+            # print(f"Création de la base de données : {db_name}")
+            conn = sqlite3.connect(db_name)
+            cursor = conn.cursor()
+            cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS requests (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                DT DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                requestId TEXT,
+                                cleanRequestId TEXT,
+                                title TEXT,
+                                args_list TEXT,
+                                NewSearch INTEGER
+                            )
+                        ''')
+            conn.close()
+        else:
+            b_db_already_exist = True
+    return b_db_already_exist
+
+def getIfNeedNewSearchDB(requestId):
+    global db_name
+
+    # Connexion à la base de données
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+    cleanRequestId, nSaison, nEpisode = requestId.split(":")
+
+    try:
+        # Rechercher les lignes correspondantes
+        cursor.execute('''
+            SELECT * FROM requests
+            WHERE requestId = ?
+            ORDER BY DT DESC
+            LIMIT 1
+        ''', (requestId,))
+
+        # Récupérer les résultats
+        LastRqstDone = cursor.fetchone() #peu importe si c'etait une vrai recherche ou pas
+
+        cursor.execute('''
+            SELECT * FROM requests
+            WHERE cleanRequestId = ? AND NewSearch = 1
+            ORDER BY DT DESC
+            LIMIT 1
+        ''', (cleanRequestId,))
+
+        LastSearchDone = cursor.fetchone()  #La dernier recherche realement effectué
+        conn.close()  # Fermer la connexion
+
+        #Tester le detla du temps
+        maintenant = datetime.now()
+        if LastRqstDone:
+            LastRqstDoneTime = datetime.strptime(LastRqstDone[1], "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
+
+            if timedelta(minutes=1) < (maintenant - LastRqstDoneTime):
+                if LastSearchDone:
+                    LastSearchDoneTime = datetime.strptime(LastSearchDone[1],
+                                                         "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
+                    if (maintenant - LastSearchDoneTime) < timedelta(days=7):
+                        #recherche assez récente
+                        title = LastSearchDone[4]  # Index de la colonne title
+                        args_list = LastSearchDone[5]  # Index de la colonne args_list
+                        args_list = ast.literal_eval(args_list)
+                        return False, title, args_list # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
+                    else:
+                        return True, '', [] # recherche trop vielle relancé une nouvelle recherche
+                else:
+                    return True, '', [] #cas theoriquement impossible mais bon why not
+            else:
+                # Rqst de forcage recherche
+                return True, '', []
+        else:
+            # Aucune ligne correspondante trouvée
+            return True, '', []
+    except sqlite3.Error as e:
+        # print(f"Erreur lors de la recherche dans la base de données : {e}")
+        return True, '', []
+    finally:
+        conn.close()  # Fermer la connexion
+
+def ajouterElementDB(requestId, title, args_list, bNewSearch):
+    global db_name
+    # Connexion à la base de données
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+
+    cleanRequestId, nSaison, nEpisode = requestId.split(":")
+    # Insertion des données dans la table
+    try:
+        local_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Heure locale
+        cursor.execute('''
+            INSERT INTO requests (DT, requestId, cleanRequestId, title, args_list, NewSearch)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (local_time, requestId, cleanRequestId, title, str(args_list), int(bNewSearch)))
+
+        conn.commit()  # Valider la transaction
+        return True
+    except sqlite3.Error as e:
+        # print(f"Erreur lors de l'ajout de l'élément : {e}")
+        return False
+    finally:
+        conn.close()  # Fermer la connexion
 
 def main():
     if len(sys.argv) == 3:
         requestId = sys.argv[1]
-        sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId)
+        args_list = []
+        bcheckdbbefore = initDB("historique")
+        bNeedNewSearch = True
+        sTitre = ''
 
-        sSearchText = sTitre
-        oSearch = cSearch()
-        oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat)
-        stored_items = xbmcplugin.getDirectoryItems()  # Retourne la liste de tous les sites avec et sans résultats
+        if bcheckdbbefore:
+            bNeedNewSearch, sTitre, args_list = getIfNeedNewSearchDB(requestId)
 
-        # Filtrer les éléments inutilisables
-        stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
+        if bNeedNewSearch == True:
+            #nouvelle rqst ou demande de maj
+            sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId)
 
-        # Exécuter les traitements en parallèle avec ProcessPoolExecutor
-        args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
+            sSearchText = sTitre
+            oSearch = cSearch()
+            oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat)
+            stored_items = xbmcplugin.getDirectoryItems()  # Retourne la liste de tous les sites avec et sans résultats
+
+            # Filtrer les éléments inutilisables
+            stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
+
+            # Exécuter les traitements en parallèle avec ProcessPoolExecutor
+            args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
+        #else:
+            # utilisation du dernier resultat de recherche
+
+        # le save dans la db
+        ajouterElementDB(requestId, sTitre, args_list, bNeedNewSearch)
+        # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
+        args_list = [item + (bNeedNewSearch,) for item in args_list]
+
         with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
             results = executor.map(callTraitementWebSite, args_list)
 
