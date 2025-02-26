@@ -19,7 +19,7 @@ const appName = "vStream";
 
 // Fonction de parsing utilisant une expression régulière pour extraire les tuples
 function parsePythonOutput(output) {
-    console.log("Debug: Raw Python output received:", output);
+    // console.log("Debug: Raw Python output received:", output);
 
     const startParseTime = Date.now();
 
@@ -35,7 +35,7 @@ function parsePythonOutput(output) {
     }
 
     const endParseTime = Date.now();
-    console.log("Debug: Parsed data from Python output:", parsedData);
+    // console.log("Debug: Parsed data from Python output:", parsedData);
     console.log(`Parsing completed in ${(endParseTime - startParseTime) / 1000} seconds`);
     return parsedData;
 }
@@ -48,7 +48,7 @@ builder.defineStreamHandler(async function(args) {
         return Promise.resolve({ streams: [] });
     }
 	
-    console.log(`Handling stream request for ID: ${id}`);
+    //console.log(`Handling stream request for ID: ${id}`);
 
     const startTime = Date.now();
     const pythonArgs = [id, "?function=DoNothing"];
@@ -92,7 +92,7 @@ builder.defineStreamHandler(async function(args) {
                     url: streamUrl
                 }));
 
-                console.log("Debug: Final streams to be returned to Stremio:", streams);
+                //console.log("Debug: Final streams to be returned to Stremio:", streams);
                 resolve({ streams });
             } catch (error) {
                 console.error("Failed to parse Python output:", error);
