@@ -123,7 +123,7 @@ def obtenirTitreFilm(imdb_id):
         return ""
 
 
-def contructRqst(requestId):
+def contructRqst(requestId, sTitre, sCat):
     bSeriesRqst = False
     nSaison = 'NA'
     nEpisode = 'NA'
@@ -132,7 +132,8 @@ def contructRqst(requestId):
         bSeriesRqst = True
         requestId, nSaison, nEpisode = requestId.split(":")
 
-    sTitre, sCat = obtenirTitreFilm(requestId)
+    if sTitre == '' or sCat == '': # Si on a pas recup deja l'info de la db history
+        sTitre, sCat = obtenirTitreFilm(requestId)
 
     return sTitre, bSeriesRqst, nSaison, nEpisode, sCat
 
@@ -180,7 +181,8 @@ def initDB(nomDb):
                                 cleanRequestId TEXT,
                                 title TEXT,
                                 args_list TEXT,
-                                NewSearch INTEGER
+                                NewSearch INTEGER,
+                                CAT INTEGER
                             )
                         ''')
             conn.close()
@@ -190,6 +192,11 @@ def initDB(nomDb):
 
 def getIfNeedNewSearchDB(requestId):
     global db_name
+    #return
+    bNeedNewSearch = True
+    title = ''
+    args_list = []
+    Cat = 0
 
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
@@ -222,6 +229,8 @@ def getIfNeedNewSearchDB(requestId):
         maintenant = datetime.now()
         if LastRqstDone:
             LastRqstDoneTime = datetime.strptime(LastRqstDone[1], "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
+            title = LastSearchDone[4]  # Index de la colonne title
+            Cat = LastSearchDone[7]  # Index de la colonne CAT
 
             if timedelta(minutes=1) < (maintenant - LastRqstDoneTime):
                 if LastSearchDone:
@@ -229,27 +238,28 @@ def getIfNeedNewSearchDB(requestId):
                                                          "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
                     if (maintenant - LastSearchDoneTime) < timedelta(days=7):
                         #recherche assez récente
-                        title = LastSearchDone[4]  # Index de la colonne title
                         args_list = LastSearchDone[5]  # Index de la colonne args_list
                         args_list = ast.literal_eval(args_list)
-                        return False, title, args_list # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
+                        bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
                     else:
-                        return True, '', [] # recherche trop vielle relancé une nouvelle recherche
+                        bNeedNewSearch = True # recherche trop vielle relancé une nouvelle recherche
                 else:
-                    return True, '', [] #cas theoriquement impossible mais bon why not
+                    bNeedNewSearch = True #cas theoriquement impossible mais bon why not
             else:
                 # Rqst de forcage recherche
-                return True, '', []
+                bNeedNewSearch = True
         else:
             # Aucune ligne correspondante trouvée
-            return True, '', []
+            bNeedNewSearch = True
     except sqlite3.Error as e:
         # print(f"Erreur lors de la recherche dans la base de données : {e}")
-        return True, '', []
+        bNeedNewSearch = True
     finally:
         conn.close()  # Fermer la connexion
 
-def ajouterElementDB(requestId, title, args_list, bNewSearch):
+    return bNeedNewSearch, title, args_list, str(Cat)
+
+def ajouterElementDB(requestId, title, args_list, bNewSearch, sCat):
     global db_name
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
@@ -260,9 +270,9 @@ def ajouterElementDB(requestId, title, args_list, bNewSearch):
     try:
         local_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Heure locale
         cursor.execute('''
-            INSERT INTO requests (DT, requestId, cleanRequestId, title, args_list, NewSearch)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (local_time, requestId, cleanRequestId, title, str(args_list), int(bNewSearch)))
+            INSERT INTO requests (DT, requestId, cleanRequestId, title, args_list, NewSearch, CAT)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (local_time, requestId, cleanRequestId, title, str(args_list), int(bNewSearch), int(sCat)))
 
         conn.commit()  # Valider la transaction
         return True
@@ -279,13 +289,14 @@ def main():
         bcheckdbbefore = initDB("historique")
         bNeedNewSearch = True
         sTitre = ''
+        sCat = ''
 
         if bcheckdbbefore:
-            bNeedNewSearch, sTitre, args_list = getIfNeedNewSearchDB(requestId)
+            bNeedNewSearch, sTitre, args_list, sCat = getIfNeedNewSearchDB(requestId)
 
         if bNeedNewSearch == True:
             #nouvelle rqst ou demande de maj
-            sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId)
+            sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId, sTitre, sCat)
 
             sSearchText = sTitre
             oSearch = cSearch()
@@ -301,7 +312,7 @@ def main():
             # utilisation du dernier resultat de recherche
 
         # le save dans la db
-        ajouterElementDB(requestId, sTitre, args_list, bNeedNewSearch)
+        ajouterElementDB(requestId, sTitre, args_list, bNeedNewSearch, sCat)
         # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
         args_list = [item + (bNeedNewSearch,) for item in args_list]
 
