@@ -1,9 +1,9 @@
 const { addonBuilder } = require("stremio-addon-sdk");
-const { spawn } = require("child_process");
+const fetch = require("node-fetch");
 
 const manifest = { 
     "id": "org.stremio.dtstream",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "name": "vStreamIO",
     "description": "vStream addon for StremIO",
     "resources": [
@@ -16,6 +16,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 const appName = "vStream";
+const API_URL = "http://127.0.0.2:8000/process/"; // URL du serveur FastAPI
 
 // Fonction de parsing utilisant une expression régulière pour extraire les tuples
 function parsePythonOutput(output) {
@@ -47,65 +48,50 @@ builder.defineStreamHandler(async function(args) {
         console.log("Invalid ID format:", id);
         return Promise.resolve({ streams: [] });
     }
-	
-    //console.log(`Handling stream request for ID: ${id}`);
 
-    const startTime = Date.now();
-    const pythonArgs = [id, "?function=DoNothing"];
-    console.log("Starting Python script with args:", pythonArgs);
+    console.log(`Handling stream request for ID: ${id}`);
 
-    return new Promise((resolve, reject) => {
-        const pythonProcess = spawn('python', ["../addonPythonScript/main.py", ...pythonArgs]);
-        let pythonOutput = "";
+    try {
+        const startTime = Date.now();
 
-        pythonProcess.stdout.on('data', (data) => {
-            pythonOutput += data.toString();
+        // Appel à l'API FastAPI
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId: id }),
         });
 
-        pythonProcess.stderr.on('data', (data) => {
-            console.error("Python Error:", data.toString());
-        });
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status} - ${response.statusText}`);
+        }
 
-        pythonProcess.on('close', (code) => {
-            const endTime = Date.now();
-            console.log(`Python script completed in ${(endTime - startTime) / 1000} seconds with code: ${code}`);
-            
-            if (code !== 0) {
-                console.error("Python script failed with exit code:", code);
-                return resolve({ 
-									streams: [{
-										name: `${appName} - Error`,
-										description: `Python script failed\nExit code: ${code}`,
-										url: ""
-									}] 
-								});
-            }
+        const data = await response.json();
+        const pythonOutput = data.output;
 
-            try {
-                // Utilisation de la fonction `parsePythonOutput` pour interpréter les données
-                const pythonData = parsePythonOutput(pythonOutput);
+        const endTime = Date.now();
+        console.log(`Python API response received in ${(endTime - startTime) / 1000} seconds`);
 
-                // Construction de la structure `streams` pour Stremio
-                const streams = pythonData.map(({ siteName, hostName, language, streamUrl }) => ({
-                    name: `${appName} - ${siteName}`,
-                    description: `${hostName}\n${language}`,
-                    url: streamUrl
-                }));
+        // Parsing de la réponse Python
+        const pythonData = parsePythonOutput(pythonOutput);
 
-                //console.log("Debug: Final streams to be returned to Stremio:", streams);
-                resolve({ streams });
-            } catch (error) {
-                console.error("Failed to parse Python output:", error);
-                resolve({ 
-							streams: [{
-								name: `${appName} - Error`,
-								description: `Failed to parse Python output\nError: ${error.message}`,
-								url: ""
-							}] 
-						});
-            }
-        });
-    });
+        // Construction des streams pour Stremio
+        const streams = pythonData.map(({ siteName, hostName, language, streamUrl }) => ({
+            name: `${appName} - ${siteName}`,
+            description: `${hostName}\n${language}`,
+            url: streamUrl
+        }));
+
+        return { streams };
+    } catch (error) {
+        console.error("Error calling Python API:", error);
+        return {
+            streams: [{
+                name: `${appName} - Error`,
+                description: `Failed to call Python API\nError: ${error.message}`,
+                url: ""
+            }]
+        };
+    }
 });
 
 module.exports = builder.getInterface();

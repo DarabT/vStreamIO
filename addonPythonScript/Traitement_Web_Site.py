@@ -3,6 +3,7 @@
 import sys  # to comunicate with node.js
 import os.path
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
@@ -15,6 +16,7 @@ if (parent_dir + '/KodiStub') not in sys.path:
 import re
 import xbmcplugin
 
+
 def getContructRqst():
     requestId = sys.argv[1]
     requestId, nSaison, nEpisode = requestId.split(":")
@@ -25,16 +27,42 @@ def getContructRqst():
     bMainRqstNewSearch = sys.argv[6]
 
     return requestId, bSeriesRqst, nSaison, nEpisode, [(sysArg, False, False)], bMainRqstNewSearch
-
+#Global
 bInit = True
+requestId = ''
+bSeriesRqst = False
+nSaison = 0
+nEpisode = 0
+
 def callvStream():
     from default import main as vStreamMain
     global bInit
+
     if bInit:
+        # no need to call le import appel deja la fonction main
         bInit = False
     else:
         vStreamMain()
-    #no need to call le import appel deja la fonction main
+
+    stored_item = xbmcplugin.getDirectoryItems()
+    stored_flux = xbmcplugin.getFluxPlayer()
+    xbmcplugin.clearDirectoryItems()
+
+    return stored_item, stored_flux
+
+def vStreamCapsul(args):
+    bLastTraitement = False
+    new_arguemnts = args[0][0]
+    path, separator, params = new_arguemnts.partition('?')
+    params = separator + params  # Reconstruire params pour inclure le '?'
+    if "&function=play&" in params:
+        ajouterElementDB(args[1], args[2], args[3], args[4], args[5],
+                         args[0])  # save du resultat pour le prochain coup
+        bLastTraitement = True
+        params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params)
+    sys.argv = ["TOTO.py", path, params]
+    stored_item, stored_flux= callvStream()
+    return stored_item, stored_flux, bLastTraitement
 
 def getWebSiteName(stored_items):
     nomDuSite = None
@@ -73,8 +101,8 @@ def initDB(nomDuSite):
             b_db_already_exist = True
     return b_db_already_exist
 
-def ajouterElementDB(requestId, bSeriesRqst, nSaison, nEpisode, stored_items):
-    global db_name
+def ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison, nEpisode, stored_items):
+    b_Return = False
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
@@ -87,59 +115,79 @@ def ajouterElementDB(requestId, bSeriesRqst, nSaison, nEpisode, stored_items):
         ''', (requestId, int(bSeriesRqst), nSaison, nEpisode, str(stored_items)))
 
         conn.commit()  # Valider la transaction
-        return True
+        b_Return = True
     except sqlite3.Error as e:
         # print(f"Erreur lors de l'ajout de l'élément : {e}")
-        return False
+        b_Return = False
     finally:
         conn.close()  # Fermer la connexion
 
-def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode):
+    return b_Return
+
+def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch):
     global db_name
+
+    b_Return = False
+    nouveau_resultats = []
 
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
 
     try:
-        # Rechercher les lignes correspondantes
-        cursor.execute('''
-            SELECT stored_items FROM requests
-            WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-        ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
-
-        # Récupérer les résultats
-        resultats = cursor.fetchall()
-
-        if resultats:
-            # Extraire les stored_items des lignes correspondantes
-            nouveau_resultats = []
-            for item in resultats:
-                match = re.search(r"\('(.+?)', <", item[0])
-                if match:
-                    extrait = match.group(1)  # On extrait la partie souhaitée
-                    nouveau_resultats.append([extrait, False, False])
-
-            #clean des lignes utilisé
+        if bMainRqstNewSearch == True:
+            # clean des lignes qui vont etre actualisee
             cursor.execute('''
-                            DELETE FROM requests
-                            WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-                            ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+                                    DELETE FROM requests
+                                    WHERE requestId = ?
+                                    ''', (requestId,))
             conn.commit()
-            conn.close()  # Fermer la connexion
-            return True, nouveau_resultats
+            b_Return = False
+            nouveau_resultats = []
         else:
-            # Aucune ligne correspondante trouvée
-            return False, []
+            # Rechercher les lignes correspondantes
+            cursor.execute('''
+                SELECT stored_items FROM requests
+                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
+            ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+
+            # Récupérer les résultats
+            resultats = cursor.fetchall()
+
+            if resultats:
+                # Extraire les stored_items des lignes correspondantes
+                nouveau_resultats = []
+                for item in resultats:
+                    match = re.search(r"\('(.+?)', <", item[0])
+                    if match:
+                        extrait = match.group(1)  # On extrait la partie souhaitée
+                        nouveau_resultats.append([extrait, False, False])
+
+                #clean des lignes utilisé
+                cursor.execute('''
+                                DELETE FROM requests
+                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
+                                ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+                conn.commit()
+                b_Return = True
+            else:
+                # Aucune ligne correspondante trouvée
+                b_Return = False
+                nouveau_resultats = []
     except sqlite3.Error as e:
-        # print(f"Erreur lors de la recherche dans la base de données : {e}")
-        return False, []
+        #print(f"Erreur lors de la recherche dans la base de données : {e}")
+        b_Return = False
+        nouveau_resultats = []
     finally:
         conn.close()  # Fermer la connexion
 
+    return b_Return, nouveau_resultats
+
 def main():
+    global db_name
     # Vérification des arguments passés au script
     if len(sys.argv) == 7:
+        global requestId, bSeriesRqst, nSaison, nEpisode
         bLastTraitement = False
         bSaisonAndEpisodCatched = False
         bSaisonCatched = False
@@ -149,9 +197,11 @@ def main():
         nomDuSite = getWebSiteName(stored_items)
         bcheckdbbefore = initDB(nomDuSite)
 
+        const_info_db_play = (db_name, requestId, bSeriesRqst, nSaison, nEpisode)
+
         if bcheckdbbefore:
             #la base db exist deja checker si la recherche a etait deja faite d'abord
-            bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode)
+            bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch)
             if bOldSearchMatched and OldListedMatched and bMainRqstNewSearch == False:
                 stored_items = OldListedMatched
                 bSaisonCatched = True
@@ -175,29 +225,37 @@ def main():
                         if not (int(nEpisode) == nEpisodeOfLine):
                             bFlagPop = True # ce n'est pas l'ep rechercher
                     if bFlagPop:
-                        ajouterElementDB(requestId, bSeriesRqst, nSaison if bSaisonCatched else nSaisonOfLine, nEpisodeOfLine, stored_items[i])    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
+                        ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison if bSaisonCatched else nSaisonOfLine, nEpisodeOfLine, stored_items[i])    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
                         stored_items.pop(i) #on a bien trouver les deux infos n°Saison et n°Episode mais elle ne match pas (on l'eclu de la liste)
 
-            xbmcplugin.clearDirectoryItems()
-            for stored_item in stored_items:
-                new_arguemnts = stored_item[0]
-                path, separator, params = new_arguemnts.partition('?')
-                params = separator + params  # Reconstruire params pour inclure le '?'
-                if "function=play" in params:
-                    ajouterElementDB(requestId, bSeriesRqst, nSaison, nEpisode, stored_item) #save du resultat pour le prochain coup
-                    bLastTraitement = True
-                    params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params)
-                sys.argv = ["TOTO.py", path, params]
-                callvStream()
-            stored_items = xbmcplugin.getDirectoryItems()
+            # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
+            args_list = [(item, *const_info_db_play) for item in stored_items]
+
+            with ProcessPoolExecutor(max_workers=len(stored_items)) as executor:
+                results = executor.map(vStreamCapsul, args_list) #TODO cas ou bLastTraitement serait en decalage sur plusieurs appel possible ? Ex: une etape est deja au play mais pas les autres
+
+            results_item, results_flux, bLastTraitement = zip(*results)
+            stored_items = []
+            for output_list in results_item:
+                if output_list:
+                    stored_items.extend(output_list)
+
+            if any(bLastTraitement): #si un des appel est en mode "function=play"
+                bLastTraitement = True
+                stored_flux = []
+                for output_list in results_flux:
+                    if output_list:
+                        stored_flux.extend(output_list)
+                xbmcplugin.setFluxPlayer(stored_flux)
+            else:
+                bLastTraitement = False
     else:
         # Cas où il y a trop d'arguments
         print("Erreur: argument attendu : \"bSeriesRqst, nSaison, nEpisode, stored_items\".")
         sys.exit(1)
 
-
-
-if __name__ == "__main__":
+def main_Traitement_Web_Site(args):
+    sys.argv = args
     main()
     stored_items = xbmcplugin.getFluxPlayer()
-    print(stored_items)
+    return stored_items

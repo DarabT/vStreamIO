@@ -139,25 +139,11 @@ def contructRqst(requestId, sTitre, sCat):
 
 
 def callTraitementWebSite(args):
+    from Traitement_Web_Site import main_Traitement_Web_Site
     requestId, bSeriesRqst, nSaison, nEpisode, sysArg, bMainRqstNewSearch = args
-    cmd_args = [requestId, ('1' if bSeriesRqst else '0'), nSaison, nEpisode, "\"" + sysArg + "\"", ('1' if bMainRqstNewSearch else '0')]
-    # Récupère le chemin absolu du script courant
-    script_path = os.path.abspath(__file__)
-    # Récupère le répertoire contenant ce script
-    script_dir = os.path.dirname(script_path) + '/'
-    result = subprocess.run(['python', script_dir + 'Traitement_Web_Site.py'] + cmd_args, capture_output=True, text=True)
-    output = f"Sortie du processus pour {cmd_args} :\n{result.stdout}"
-    try:
-        # Utiliser `ast.literal_eval` pour convertir `stdout` en une liste Python
-        output_list = ast.literal_eval(result.stdout.strip())
-    except (SyntaxError, ValueError) as e:
-        if __DEBUG__:
-            print(f"Erreur de parsing de result.stdout pour {cmd_args} : {e}")
-        output_list = []
-
-    if __DEBUG__ and result.stderr:
-        print(f"Erreur du processus pour {cmd_args} :\n{result.stderr}")
-
+    sysArg = "\"" + sysArg + "\""
+    args = ['', requestId, bSeriesRqst, nSaison, nEpisode, sysArg, bMainRqstNewSearch]
+    output_list = main_Traitement_Web_Site(args)
     return output_list
 
 def initDB(nomDb):
@@ -306,7 +292,7 @@ def main():
             # Filtrer les éléments inutilisables
             stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
 
-            # Exécuter les traitements en parallèle avec ProcessPoolExecutor
+            # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
             args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
         #else:
             # utilisation du dernier resultat de recherche
