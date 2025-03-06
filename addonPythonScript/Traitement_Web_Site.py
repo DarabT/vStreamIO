@@ -1,19 +1,27 @@
 # -*- coding: utf-8 -*-
 # Ajout des chemin vers sources
 import sys  # to comunicate with node.js
-import os.path
+import os
 import sqlite3
-from concurrent.futures import ProcessPoolExecutor
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
 db_name = ""
+
+thread_local = threading.local()
+max_workers_ThreadPoolExecutor = 0 # Valeur pardéfaut = 0 (on utlise autant de coeur que possible). sinon utilisé une valeur fix
+if max_workers_ThreadPoolExecutor == 0:
+    max_workers_ThreadPoolExecutor = os.cpu_count() or 4 #valeur de repli = 4
+
 if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
     sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
 if (parent_dir + '/KodiStub') not in sys.path:
     sys.path.insert(0, parent_dir + '/KodiStub')
 
-import re
 import xbmcplugin
 
 
@@ -34,6 +42,21 @@ bSeriesRqst = False
 nSaison = 0
 nEpisode = 0
 
+def get_thread_argv():
+    """Récupère sys.argv spécifique au thread ou retourne l'original."""
+    return getattr(thread_local, "argv", sys.argv)
+
+@contextmanager
+def monkey_patched_sys_argv():
+    """Remplace temporairement sys.argv par la version thread-local du thread courant."""
+    original_sys_argv = sys.argv  # Sauvegarde l'original
+    sys.modules["sys"].argv = get_thread_argv()  # Remplace temporairement
+    try:
+        yield  # Exécute le code avec sys.argv modifié
+    except:
+        #sys.modules["sys"].argv = original_sys_argv  # Restaure l'original
+        pass
+
 def callvStream():
     from default import main as vStreamMain
     global bInit
@@ -44,11 +67,7 @@ def callvStream():
     else:
         vStreamMain()
 
-    stored_item = xbmcplugin.getDirectoryItems()
-    stored_flux = xbmcplugin.getFluxPlayer()
-    xbmcplugin.clearDirectoryItems()
-
-    return stored_item, stored_flux
+    return
 
 def vStreamCapsul(args):
     bLastTraitement = False
@@ -60,9 +79,12 @@ def vStreamCapsul(args):
                          args[0])  # save du resultat pour le prochain coup
         bLastTraitement = True
         params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params)
-    sys.argv = ["TOTO.py", path, params]
-    stored_item, stored_flux= callvStream()
-    return stored_item, stored_flux, bLastTraitement
+    thread_local.argv = ["TOTO.py", path, params]
+    with monkey_patched_sys_argv():
+        callvStream()
+
+    #print("callvStream: " + str(xbmcplugin.getFluxPlayer()))
+    return bLastTraitement
 
 def getWebSiteName(stored_items):
     nomDuSite = None
@@ -161,7 +183,7 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
                     match = re.search(r"\('(.+?)', <", item[0])
                     if match:
                         extrait = match.group(1)  # On extrait la partie souhaitée
-                        nouveau_resultats.append([extrait, False, False])
+                        nouveau_resultats.append((extrait, False, False))
 
                 #clean des lignes utilisé
                 cursor.execute('''
@@ -231,24 +253,19 @@ def main():
             # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
             args_list = [(item, *const_info_db_play) for item in stored_items]
 
-            with ProcessPoolExecutor(max_workers=len(stored_items)) as executor:
-                results = executor.map(vStreamCapsul, args_list) #TODO cas ou bLastTraitement serait en decalage sur plusieurs appel possible ? Ex: une etape est deja au play mais pas les autres
+            #print("DEBUG stored_items:", stored_items)
 
-            results_item, results_flux, bLastTraitement = zip(*results)
-            stored_items = []
-            for output_list in results_item:
-                if output_list:
-                    stored_items.extend(output_list)
+            with ThreadPoolExecutor(max_workers=min(max_workers_ThreadPoolExecutor, len(stored_items))) as executor:
+                bLastTraitement = list(executor.map(vStreamCapsul, args_list)) #TODO cas ou bLastTraitement serait en decalage sur plusieurs appel possible ? Ex: une etape est deja au play mais pas les autres
+
+            stored_items = xbmcplugin.getDirectoryItems()
+            xbmcplugin.clearDirectoryItems()
 
             if any(bLastTraitement): #si un des appel est en mode "function=play"
                 bLastTraitement = True
-                stored_flux = []
-                for output_list in results_flux:
-                    if output_list:
-                        stored_flux.extend(output_list)
-                xbmcplugin.setFluxPlayer(stored_flux)
             else:
                 bLastTraitement = False
+            #print(str(bLastTraitement) + "   " + str(xbmcplugin.getFluxPlayer()))
     else:
         # Cas où il y a trop d'arguments
         print("Erreur: argument attendu : \"bSeriesRqst, nSaison, nEpisode, stored_items\".")

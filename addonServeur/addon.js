@@ -16,7 +16,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 const appName = "vStream";
-const API_URL = "http://127.0.0.2:8000/process/"; // URL du serveur FastAPI
+const API_URL = "http://127.0.0.2:8001/process/"; // URL du serveur FastAPI
 
 // Fonction de parsing utilisant une expression régulière pour extraire les tuples
 function parsePythonOutput(output) {

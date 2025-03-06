@@ -1,10 +1,22 @@
 # -*- coding: utf-8 -*-
 # Ajout des chemins vers sources
 import sys  # to communicate with node.js
-import os.path
+import os
+import ast
+import time
+import sqlite3
+import requests
+from bs4 import BeautifulSoup
+from imdb import IMDb
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 __DEBUG__ = False
+max_workers_ProcessPoolExecutor = 0 # Valeur pardéfaut = 0 (on utlise autant de coeur que possible). sinon utilisé une valeur fix
+if max_workers_ProcessPoolExecutor == 0:
+    max_workers_ProcessPoolExecutor = os.cpu_count() or 4 #valeur de repli = 4
+
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
@@ -17,20 +29,10 @@ if (parent_dir + '/KodiStub') not in sys.path:
     sys.path.insert(0, parent_dir + '/KodiStub')
 
 from resources.lib.search import cSearch
-from imdb import IMDb
 import xbmcplugin
-import subprocess
-from concurrent.futures import ThreadPoolExecutor
-import ast
-import time
-import sqlite3
-from datetime import datetime, timedelta
+
 
 ################################## IMDb incapable de me dire si c'est un anime ou pas utilisation de BeautifulSoup pour catch les Tags et vérfier si "anime" est dedans ##########################################
-import requests
-from bs4 import BeautifulSoup
-
-
 def get_imdb_interests_anime_or_not(url):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
@@ -302,7 +304,7 @@ def main():
         # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
         args_list = [item + (bNeedNewSearch,) for item in args_list]
 
-        with ProcessPoolExecutor(max_workers=len(args_list)) as executor:
+        with ProcessPoolExecutor(max_workers=min(max_workers_ProcessPoolExecutor, len(args_list)) )as executor:
             results = executor.map(callTraitementWebSite, args_list)
 
         # get les resultat et les organiser
