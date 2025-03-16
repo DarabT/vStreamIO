@@ -16,6 +16,7 @@ thread_local = threading.local()
 max_workers_ThreadPoolExecutor = 0 # Valeur pardéfaut = 0 (on utlise autant de coeur que possible). sinon utilisé une valeur fix
 if max_workers_ThreadPoolExecutor == 0:
     max_workers_ThreadPoolExecutor = os.cpu_count() or 4 #valeur de repli = 4
+    max_workers_ThreadPoolExecutor = max_workers_ThreadPoolExecutor*2
 
 if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
     sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
@@ -27,7 +28,14 @@ import xbmcplugin
 
 def getContructRqst():
     requestId = sys.argv[1]
-    requestId, nSaison, nEpisode = requestId.split(":")
+    if ":" in requestId:
+        #serie
+        requestId, nSaison, nEpisode = requestId.split(":")
+    else:
+        #movie
+        requestId = requestId
+        nSaison = 0
+        nEpisode = 0
     bSeriesRqst = int(sys.argv[2])
     nSaison = sys.argv[3] #sur ecriture
     nEpisode = sys.argv[4] #sur ecriture
@@ -72,6 +80,8 @@ def callvStream():
 def vStreamCapsul(args):
     bLastTraitement = False
     new_arguemnts = args[0][0]
+    if new_arguemnts.startswith('"') and new_arguemnts.endswith('"'):
+        new_arguemnts = new_arguemnts[1:-1]
     path, separator, params = new_arguemnts.partition('?')
     params = separator + params  # Reconstruire params pour inclure le '?'
     if "&function=play&" in params:

@@ -189,7 +189,12 @@ def getIfNeedNewSearchDB(requestId):
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
-    cleanRequestId, nSaison, nEpisode = requestId.split(":")
+    if ":" in requestId:
+        #serie
+        cleanRequestId, nSaison, nEpisode = requestId.split(":")
+    else:
+        #movie
+        cleanRequestId = requestId
 
     try:
         # Rechercher les lignes correspondantes
@@ -253,7 +258,12 @@ def ajouterElementDB(requestId, title, args_list, bNewSearch, sCat):
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
 
-    cleanRequestId, nSaison, nEpisode = requestId.split(":")
+    if ":" in requestId:
+        #serie
+        cleanRequestId, nSaison, nEpisode = requestId.split(":")
+    else:
+        #movie
+        cleanRequestId = requestId
     # Insertion des données dans la table
     try:
         local_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Heure locale
