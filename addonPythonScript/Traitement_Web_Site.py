@@ -160,6 +160,7 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
     global db_name
 
     b_Return = False
+    b_SameSeriesDiffrentSaisonOrEp = False
     nouveau_resultats = []
 
     # Connexion à la base de données
@@ -186,6 +187,17 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
             # Récupérer les résultats
             resultats = cursor.fetchall()
 
+            if not resultats and bSeriesRqst: #cas possible dans le cas ou la premiere recherche avait etait avec une saison differente
+                # Rechercher les lignes correspondantes
+                cursor.execute('''
+                                SELECT stored_items FROM requests
+                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
+                            ''', (requestId, int(bSeriesRqst), nSaison, str(0))) #ep 0
+
+                # Récupérer les résultats
+                resultats = cursor.fetchall()
+                b_SameSeriesDiffrentSaisonOrEp = True
+
             if resultats:
                 # Extraire les stored_items des lignes correspondantes
                 nouveau_resultats = []
@@ -200,6 +212,11 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
                                 DELETE FROM requests
                                 WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
                                 ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+                if b_SameSeriesDiffrentSaisonOrEp:
+                    cursor.execute('''
+                                                    DELETE FROM requests
+                                                    WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
+                                                    ''', (requestId, int(bSeriesRqst), nSaison, str(0))) #ep 0
                 conn.commit()
                 b_Return = True
             else:
@@ -265,16 +282,21 @@ def main():
 
             #print("DEBUG stored_items:", stored_items)
 
-            with ThreadPoolExecutor(max_workers=min(max_workers_ThreadPoolExecutor, len(stored_items))) as executor:
-                bLastTraitement = list(executor.map(vStreamCapsul, args_list)) #TODO cas ou bLastTraitement serait en decalage sur plusieurs appel possible ? Ex: une etape est deja au play mais pas les autres
+            if len(stored_items) != 0:
+                with ThreadPoolExecutor(max_workers=min(max_workers_ThreadPoolExecutor, len(stored_items))) as executor:
+                    bLastTraitement = list(executor.map(vStreamCapsul, args_list)) #TODO cas ou bLastTraitement serait en decalage sur plusieurs appel possible ? Ex: une etape est deja au play mais pas les autres
+
+                if any(bLastTraitement):  # si un des appel est en mode "function=play"
+                    bLastTraitement = True
+                else:
+                    bLastTraitement = False
+            else:
+                bLastTraitement = True
 
             stored_items = xbmcplugin.getDirectoryItems()
             xbmcplugin.clearDirectoryItems()
 
-            if any(bLastTraitement): #si un des appel est en mode "function=play"
-                bLastTraitement = True
-            else:
-                bLastTraitement = False
+
             #print(str(bLastTraitement) + "   " + str(xbmcplugin.getFluxPlayer()))
     else:
         # Cas où il y a trop d'arguments

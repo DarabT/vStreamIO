@@ -195,8 +195,21 @@ def getIfNeedNewSearchDB(requestId):
     else:
         #movie
         cleanRequestId = requestId
+        nSaison = False
+        nEpisode = False
 
     try:
+        # Rechercher les lignes correspondantes
+        cursor.execute('''
+                    SELECT * FROM requests
+                    WHERE cleanRequestId = ?
+                    ORDER BY DT DESC
+                    LIMIT 1
+                ''', (cleanRequestId,))
+
+        # Récupérer les résultats
+        LastClearIdRqstDone = cursor.fetchone()  #le meme ID (sans regarder la saison et l'episode) peu importe si c'etait une vrai recherche ou pas
+
         # Rechercher les lignes correspondantes
         cursor.execute('''
             SELECT * FROM requests
@@ -206,7 +219,7 @@ def getIfNeedNewSearchDB(requestId):
         ''', (requestId,))
 
         # Récupérer les résultats
-        LastRqstDone = cursor.fetchone() #peu importe si c'etait une vrai recherche ou pas
+        LastRqstDone = cursor.fetchone() #Exactement le meme ID (saison et episode inclus) peu importe si c'etait une vrai recherche ou pas
 
         cursor.execute('''
             SELECT * FROM requests
@@ -220,12 +233,15 @@ def getIfNeedNewSearchDB(requestId):
 
         #Tester le detla du temps
         maintenant = datetime.now()
-        if LastRqstDone:
-            LastRqstDoneTime = datetime.strptime(LastRqstDone[1], "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
+        if LastRqstDone or LastClearIdRqstDone:
+            if LastRqstDone:
+                #cas de exactement le même rqst
+                LastRqstDoneTime = datetime.strptime(LastRqstDone[1], "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
+
             title = LastSearchDone[4]  # Index de la colonne title
             Cat = LastSearchDone[7]  # Index de la colonne CAT
 
-            if timedelta(minutes=1) < (maintenant - LastRqstDoneTime):
+            if (LastRqstDone is None) or (timedelta(minutes=1) < (maintenant - LastRqstDoneTime)):
                 if LastSearchDone:
                     LastSearchDoneTime = datetime.strptime(LastSearchDone[1],
                                                          "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
@@ -233,6 +249,9 @@ def getIfNeedNewSearchDB(requestId):
                         #recherche assez récente
                         args_list = LastSearchDone[5]  # Index de la colonne args_list
                         args_list = ast.literal_eval(args_list)
+                        if (LastRqstDone is None) and nSaison and nEpisode:
+                            #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
+                            args_list = [(item[0], item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
                         bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
                     else:
                         bNeedNewSearch = True # recherche trop vielle relancé une nouvelle recherche
@@ -281,6 +300,7 @@ def ajouterElementDB(requestId, title, args_list, bNewSearch, sCat):
         conn.close()  # Fermer la connexion
 
 def main():
+    results = []
     if len(sys.argv) == 3:
         requestId = sys.argv[1]
         args_list = []
@@ -314,22 +334,37 @@ def main():
         # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
         args_list = [item + (bNeedNewSearch,) for item in args_list]
 
-        with ProcessPoolExecutor(max_workers=min(max_workers_ProcessPoolExecutor, len(args_list)) )as executor:
-            results = executor.map(callTraitementWebSite, args_list)
+        if len(args_list) != 0:
+            with ProcessPoolExecutor(max_workers=min(max_workers_ProcessPoolExecutor, len(args_list)) )as executor:
+                results = executor.map(callTraitementWebSite, args_list)
 
         # get les resultat et les organiser
         final_list = []
+
         for output_list in results:
             if output_list:
                 final_list.extend(output_list)
 
         final_list.sort()
         print(final_list)
+        return final_list
     else:
         # Cas où il y a trop d'arguments
         print("Erreur: attendu un seul argument sous la forme \"id:imdb\".")
         sys.exit(1)
 
+def main_rqst_from_server(requestId):
+    if requestId:
+        xbmcplugin.clearDirectoryItems() # on est dans un appel par serveur on a besoin de clear avant de relancer
+        const_sys_argv = []
+        const_sys_argv.append("TOTO.py")
+        const_sys_argv.append(requestId)
+        const_sys_argv.append('?function=DoNothing')
+        sys.argv = const_sys_argv
+        final_list = main()
+        return final_list
+    else:
+        return False
 
 if __name__ == "__main__":
     main()
