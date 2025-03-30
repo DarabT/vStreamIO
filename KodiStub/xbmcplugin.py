@@ -95,7 +95,7 @@ def addDirectoryItem(handle: int,
 """"""""""" ajouter par DT """""""""""""""
 stored_items = []
 stored_players = []
-def setFluxPlayer(info_flux: List[Tuple[str, str, str, str]]) -> None:
+def setFluxPlayer(info_flux: List[Tuple[str, str, str, str, str]]) -> None:
     global stored_players
     stored_players.append(info_flux)
     return True

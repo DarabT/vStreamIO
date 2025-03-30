@@ -6,6 +6,7 @@ import ast
 import time
 import sqlite3
 import requests
+import re
 from bs4 import BeautifulSoup
 from imdb import IMDb
 from concurrent.futures import ProcessPoolExecutor
@@ -84,7 +85,7 @@ def obtenirTitreFilm(imdb_id):
         if __DEBUG__:
             start_time = time.time()
         ia = IMDb()
-        result = ia.get_movie(imdb_id[2:], info=['main', 'plot'])
+        result = ia.get_movie(imdb_id[2:], info=['main', 'akas', 'plot'])
         if __DEBUG__:
             elapsed = time.time() - start_time
             print(f"Temps d'exécution de ia.get_movie: {elapsed:.4f} secondes")
@@ -101,7 +102,15 @@ def obtenirTitreFilm(imdb_id):
         film = future_film.result()
 
     if film: #match trouver
+        # Titre Original (Exemple en VO: Moana => en VF: Vania)
         title = film.get('title', '')
+        # Récupérer les titres alternatifs
+        akas = film.get('akas', [])
+        # Chercher un titre en français dans les titres alternatifs sinon garder l'Original
+        title = next((titre for titre in akas if '(France)' in titre), title)
+        # Supprimer " (France)" si trouvé
+        title = re.sub(r'\s*\(France\)$', '', title)
+
         type = film.get('kind', '').lower()
         #genres = [genre.lower() for genre in film.get('genres', [])] n'extrait pas tout les tag et sur certain resultat "anime" n'apparait pas dans la liste
 
@@ -249,10 +258,15 @@ def getIfNeedNewSearchDB(requestId):
                         #recherche assez récente
                         args_list = LastSearchDone[5]  # Index de la colonne args_list
                         args_list = ast.literal_eval(args_list)
-                        if (LastRqstDone is None) and nSaison and nEpisode:
-                            #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
-                            args_list = [(item[0], item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
-                        bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
+                        if len(args_list) != 0:
+                            if (LastRqstDone is None) and nSaison and nEpisode:
+                                #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
+                                args_list = [(item[0], item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
+                            bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
+                        else:
+                            # cas ou la precedente recherche n'avait rien trouvé
+                            bNeedNewSearch = True
+
                     else:
                         bNeedNewSearch = True # recherche trop vielle relancé une nouvelle recherche
                 else:
@@ -312,7 +326,7 @@ def main():
         if bcheckdbbefore:
             bNeedNewSearch, sTitre, args_list, sCat = getIfNeedNewSearchDB(requestId)
 
-        if bNeedNewSearch == True:
+        if bNeedNewSearch == True or len(args_list) == 0:
             #nouvelle rqst ou demande de maj
             sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId, sTitre, sCat)
 

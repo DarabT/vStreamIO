@@ -25,14 +25,14 @@ function parsePythonOutput(output) {
     const startParseTime = Date.now();
 
     // Expression régulière pour extraire les groupes de valeurs dans les tuples
-    const tupleRegex = /\('([^']*)', '([^']*)', '([^']*)', '([^']*)'\)/g;
+    const tupleRegex = /\('([^']*)', '([^']*)', '([^']*)', '([^']*)', '([^']*)'\)/g;
     let match;
     const parsedData = [];
 
     // Extraction des informations en utilisant la regex
     while ((match = tupleRegex.exec(output)) !== null) {
-        const [_, siteName, hostName, language, streamUrl] = match;
-        parsedData.push({ siteName, hostName, language, streamUrl });
+        const [_, siteName, hostName, language, fileName, streamUrl] = match;
+        parsedData.push({ siteName, hostName, language, fileName, streamUrl });
     }
 
     const endParseTime = Date.now();
@@ -75,9 +75,9 @@ builder.defineStreamHandler(async function(args) {
         const pythonData = parsePythonOutput(pythonOutput);
 
         // Construction des streams pour Stremio
-        const streams = pythonData.map(({ siteName, hostName, language, streamUrl }) => ({
+        const streams = pythonData.map(({ siteName, hostName, language, fileName, streamUrl }) => ({
             name: `${appName} - ${siteName}`,
-            description: `${hostName}\n${language}`,
+            description: `${fileName}\n${hostName}\n${language}`,
             url: streamUrl
         }));
 

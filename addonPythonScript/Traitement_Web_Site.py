@@ -239,7 +239,6 @@ def main():
         global requestId, bSeriesRqst, nSaison, nEpisode
         bLastTraitement = False
         bSaisonAndEpisodCatched = False
-        bSaisonCatched = False
 
         requestId, bSeriesRqst, nSaison, nEpisode, stored_items, bMainRqstNewSearch = getContructRqst()
 
@@ -253,28 +252,29 @@ def main():
             bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch)
             if bOldSearchMatched and OldListedMatched and bMainRqstNewSearch == False:
                 stored_items = OldListedMatched
-                bSaisonCatched = True
 
         while(bLastTraitement == False and len(stored_items)):
             if bSeriesRqst and not bSaisonAndEpisodCatched:  # catch le lien vers la bonne saison et le bon episode
                 nSaisonOfLine, nEpisodeOfLine = 0, 0
                 for i in range(len(stored_items) - 1, -1, -1):
-                    bFlagPop = False
+                    bFlagPopByEp = False
+                    bFlagPopBySaison = False
                     new_arguemnts = stored_items[i][0]
                     saison_match = re.search(r"sSeason=(\d+)", new_arguemnts)
                     episode_match = re.search(r"sEpisode=(\d+)", new_arguemnts)
-                    if saison_match and not bSaisonCatched:
+                    if saison_match:
                         nSaisonOfLine = int(saison_match.group(1)) if saison_match else None
                         if not (int(nSaison) == nSaisonOfLine):
-                            bFlagPop = True # ce n'est pas la saison rechercher
+                            bFlagPopBySaison = True # ce n'est pas la saison rechercher
                         else:
-                            bSaisonCatched = True
+                            bFlagPopBySaison = False # c'est la bonne saison
+
                     if episode_match:
                         nEpisodeOfLine = int(episode_match.group(1)) if episode_match else None
                         if not (int(nEpisode) == nEpisodeOfLine):
-                            bFlagPop = True # ce n'est pas l'ep rechercher
-                    if bFlagPop:
-                        ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison if bSaisonCatched else nSaisonOfLine, nEpisodeOfLine, stored_items[i])    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
+                            bFlagPopByEp = True # ce n'est pas l'ep rechercher
+                    if bFlagPopByEp or bFlagPopBySaison:
+                        ajouterElementDB(db_name, requestId, bSeriesRqst, nSaisonOfLine if bFlagPopBySaison else nSaison, nEpisodeOfLine, stored_items[i])    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
                         stored_items.pop(i) #on a bien trouver les deux infos n°Saison et n°Episode mais elle ne match pas (on l'eclu de la liste)
 
             # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
