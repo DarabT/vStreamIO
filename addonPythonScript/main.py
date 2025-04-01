@@ -261,7 +261,7 @@ def getIfNeedNewSearchDB(requestId):
                         if len(args_list) != 0:
                             if (LastRqstDone is None) and nSaison and nEpisode:
                                 #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
-                                args_list = [(item[0], item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
+                                args_list = [(requestId, item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
                             bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
                         else:
                             # cas ou la precedente recherche n'avait rien trouvé
