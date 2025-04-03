@@ -246,12 +246,10 @@ def getIfNeedNewSearchDB(requestId):
             if LastRqstDone:
                 #cas de exactement le même rqst
                 LastRqstDoneTime = datetime.strptime(LastRqstDone[1], "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
-
-            title = LastSearchDone[4]  # Index de la colonne title
-            Cat = LastSearchDone[7]  # Index de la colonne CAT
-
-            if (LastRqstDone is None) or (timedelta(minutes=1) < (maintenant - LastRqstDoneTime)):
-                if LastSearchDone:
+            if LastSearchDone:
+                title = LastSearchDone[4]  # Index de la colonne title
+                Cat = LastSearchDone[7]  # Index de la colonne CAT
+                if (LastRqstDone is None) or (timedelta(minutes=1) < (maintenant - LastRqstDoneTime)):
                     LastSearchDoneTime = datetime.strptime(LastSearchDone[1],
                                                          "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
                     if (maintenant - LastSearchDoneTime) < timedelta(days=7):
@@ -259,21 +257,23 @@ def getIfNeedNewSearchDB(requestId):
                         args_list = LastSearchDone[5]  # Index de la colonne args_list
                         args_list = ast.literal_eval(args_list)
                         if len(args_list) != 0:
-                            if (LastRqstDone is None) and nSaison and nEpisode:
-                                #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
-                                args_list = [(requestId, item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
+                            if nSaison and nEpisode:
+                                old_requestId = LastSearchDone[2]  # Index de la colonne requestId
+                                old_cleanRequestId, old_nSaison, old_nEpisode = old_requestId.split(":")
+                                if old_nSaison != nSaison or old_nEpisode != nEpisode:
+                                    #cas d'une reutilisation d'une recherche mais pour une saison ou un episode different
+                                    args_list = [(requestId, item[1], str(nSaison), str(nEpisode), item[4]) for item in args_list]
                             bNeedNewSearch = False # la dernier recherche avec exactement le meme id remonte à plus de 1min et la dernier vrai recherche faite remonte à moins de 7jours
                         else:
                             # cas ou la precedente recherche n'avait rien trouvé
                             bNeedNewSearch = True
-
                     else:
                         bNeedNewSearch = True # recherche trop vielle relancé une nouvelle recherche
                 else:
-                    bNeedNewSearch = True #cas theoriquement impossible mais bon why not
+                    bNeedNewSearch = True #utilisateur demande de recherche au moins de 1 min forcer la recherche
             else:
-                # Rqst de forcage recherche
-                bNeedNewSearch = True
+                # cas theoriquement impossible mais bon why not
+                bNeedNewSearch = True # Rqst de forcage recherche
         else:
             # Aucune ligne correspondante trouvée
             bNeedNewSearch = True
