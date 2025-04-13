@@ -206,7 +206,13 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
                     if match:
                         extrait = match.group(1)  # On extrait la partie souhaitée
                         nouveau_resultats.append((extrait, False, False))
+                    else:
+                        match = re.search(r"\('(.+?)', False, False", item[0])
+                        if match:
+                            extrait = match.group(1)  # On extrait la partie souhaitée
+                            nouveau_resultats.append((extrait, False, False))
 
+                #TODO if nouveau_resultats [] => erreur !!!!!
                 #clean des lignes utilisé
                 cursor.execute('''
                                 DELETE FROM requests
@@ -238,7 +244,6 @@ def main():
     if len(sys.argv) == 7:
         global requestId, bSeriesRqst, nSaison, nEpisode
         bLastTraitement = False
-        bSaisonAndEpisodCatched = False
 
         requestId, bSeriesRqst, nSaison, nEpisode, stored_items, bMainRqstNewSearch = getContructRqst()
 
@@ -254,7 +259,7 @@ def main():
                 stored_items = OldListedMatched
 
         while(bLastTraitement == False and len(stored_items)):
-            if bSeriesRqst and not bSaisonAndEpisodCatched:  # catch le lien vers la bonne saison et le bon episode
+            if bSeriesRqst:  # catch le lien vers la bonne saison et le bon episode
                 nSaisonOfLine, nEpisodeOfLine = 0, 0
                 for i in range(len(stored_items) - 1, -1, -1):
                     bFlagPopByEp = False
