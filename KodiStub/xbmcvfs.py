@@ -397,12 +397,22 @@ def exists(path: str) -> bool:
         ..
     """
     import os
+    b_return = False
     #path = path.replace('/', '\\')
     # test du chemin
-    if not os.path.isfile(path):
-        return False
+    if path == 'special://home/addons/script.module.dnspython/':
+        try:
+            import dns
+            b_return = True
+        except ImportError:
+            b_return = False
     else:
-        return True
+        if not os.path.isfile(path):
+            b_return = False
+        else:
+            b_return = True
+
+    return b_return
 
 
 def makeLegalFilename(filename: str) -> str:
