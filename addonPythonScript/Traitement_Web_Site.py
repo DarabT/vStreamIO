@@ -6,13 +6,13 @@ import sqlite3
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import types
 from contextlib import contextmanager
 
 path = os.path.realpath(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(path))
 db_name = ""
 
-thread_local = threading.local()
 max_workers_ThreadPoolExecutor = 0 # Valeur pardéfaut = 0 (on utlise autant de coeur que possible). sinon utilisé une valeur fix
 if max_workers_ThreadPoolExecutor == 0:
     max_workers_ThreadPoolExecutor = os.cpu_count() or 4 #valeur de repli = 4
@@ -24,6 +24,7 @@ if (parent_dir + '/KodiStub') not in sys.path:
     sys.path.insert(0, parent_dir + '/KodiStub')
 
 import xbmcplugin
+import addonPythonScript.Thread_argv as Thread_argv
 
 
 def getContructRqst():
@@ -45,33 +46,22 @@ def getContructRqst():
     return requestId, bSeriesRqst, nSaison, nEpisode, [(sysArg, False, False)], bMainRqstNewSearch
 #Global
 bInit = True
+bInitlock = threading.Lock()
 requestId = ''
 bSeriesRqst = False
 nSaison = 0
 nEpisode = 0
-
-def get_thread_argv():
-    """Récupère sys.argv spécifique au thread ou retourne l'original."""
-    return getattr(thread_local, "argv", sys.argv)
-
-@contextmanager
-def monkey_patched_sys_argv():
-    """Remplace temporairement sys.argv par la version thread-local du thread courant."""
-    original_sys_argv = sys.argv  # Sauvegarde l'original
-    sys.modules["sys"].argv = get_thread_argv()  # Remplace temporairement
-    try:
-        yield  # Exécute le code avec sys.argv modifié
-    except:
-        #sys.modules["sys"].argv = original_sys_argv  # Restaure l'original
-        pass
 
 def callvStream():
     from default import main as vStreamMain
     global bInit
 
     if bInit:
-        # no need to call le import appel deja la fonction main
-        bInit = False
+        with bInitlock:
+            if bInit:
+                bInit = False # no need to call le import appel deja la fonction main
+            else:
+                vStreamMain()
     else:
         vStreamMain()
 
@@ -79,21 +69,23 @@ def callvStream():
 
 def vStreamCapsul(args):
     bLastTraitement = False
-    new_arguemnts = args[0][0]
-    if new_arguemnts.startswith('"') and new_arguemnts.endswith('"'):
-        new_arguemnts = new_arguemnts[1:-1]
-    path, separator, params = new_arguemnts.partition('?')
-    params = separator + params  # Reconstruire params pour inclure le '?'
+    new_arguments = args[0][0]
+    if new_arguments.startswith('"') and new_arguments.endswith('"'):
+        new_arguments = new_arguments[1:-1]
+    path, separator, params = new_arguments.partition('?')
+    params = separator + params
     if "&function=play&" in params:
-        ajouterElementDB(args[1], args[2], args[3], args[4], args[5],
-                         args[0])  # save du resultat pour le prochain coup
+        ajouterElementDB(args[1], args[2], args[3], args[4], args[5], args[0]) #save dans la DB
         bLastTraitement = True
-        params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params)
-    thread_local.argv = ["TOTO.py", path, params]
-    with monkey_patched_sys_argv():
-        callvStream()
+        params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params) #remplace pour save dans la bonne tab de sortie
 
-    #print("callvStream: " + str(xbmcplugin.getFluxPlayer()))
+    fake_argv = ["TOTO.py", path, params]
+
+    # Définir sys.argv pour ce thread
+    Thread_argv.set_custom_argv(fake_argv)
+
+    callvStream()
+
     return bLastTraitement
 
 def getWebSiteName(stored_items):

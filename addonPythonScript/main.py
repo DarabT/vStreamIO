@@ -327,6 +327,9 @@ def main():
             bNeedNewSearch, sTitre, args_list, sCat = getIfNeedNewSearchDB(requestId)
 
         if bNeedNewSearch == True or len(args_list) == 0:
+            #input sys
+            #import addonPythonScript.Thread_argv as Thread_argv
+            #Thread_argv.set_custom_argv(sys.argv) #non applicable car oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat) crée des sub process/thread
             #nouvelle rqst ou demande de maj
             sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId, sTitre, sCat)
 
