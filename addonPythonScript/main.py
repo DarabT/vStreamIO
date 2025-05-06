@@ -24,10 +24,8 @@ parent_dir = os.path.dirname(os.path.dirname(path))
 
 db_name = "" #path db historique
 
-if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
-    sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
-if (parent_dir + '/KodiStub') not in sys.path:
-    sys.path.insert(0, parent_dir + '/KodiStub')
+import import_paths
+import_paths.setup_paths()
 
 from resources.lib.search import cSearch
 import xbmcplugin

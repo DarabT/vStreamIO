@@ -18,10 +18,8 @@ if max_workers_ThreadPoolExecutor == 0:
     max_workers_ThreadPoolExecutor = os.cpu_count() or 4 #valeur de repli = 4
     max_workers_ThreadPoolExecutor = max_workers_ThreadPoolExecutor*2
 
-if (parent_dir + '/vStreamKodi/plugin.video.vstream') not in sys.path:
-    sys.path.insert(0, parent_dir + '/vStreamKodi/plugin.video.vstream')
-if (parent_dir + '/KodiStub') not in sys.path:
-    sys.path.insert(0, parent_dir + '/KodiStub')
+import import_paths
+import_paths.setup_paths()
 
 import xbmcplugin
 import addonPythonScript.Thread_argv as Thread_argv
