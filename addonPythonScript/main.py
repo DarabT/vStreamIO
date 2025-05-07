@@ -311,6 +311,31 @@ def ajouterElementDB(requestId, title, args_list, bNewSearch, sCat):
     finally:
         conn.close()  # Fermer la connexion
 
+def enrich_streams_with_headers(final_list): # post traitement des liens avec "User-Agent", "Referer" (Exemple les liens uqload)
+    enriched_list = []
+    for item in final_list:
+        siteName, hostName, language, fileName, streamUrl = item
+
+        # Initialiser les headers
+        user_agent = False
+        referer = False
+
+        if "|" in streamUrl:
+            # cas des liens avec "User-Agent", "Referer" (Exemple les liens uqload)
+            parts = streamUrl.split("|")
+            stream_url = parts[0]
+            header_str = parts[1]
+            headers = dict(kv.split("=", 1) for kv in header_str.split("&") if "=" in kv)
+            user_agent = headers.get("User-Agent", False)
+            referer = headers.get("Referer", False)
+        else:
+            # cas des liens déja "direct"
+            stream_url = streamUrl
+
+        enriched_list.append((siteName, hostName, language, fileName, stream_url, user_agent, referer))
+
+    return enriched_list
+
 def main():
     results = []
     if len(sys.argv) == 3:
@@ -361,6 +386,7 @@ def main():
                 final_list.extend(output_list)
 
         final_list.sort()
+        final_list = enrich_streams_with_headers(final_list) # post traitement des liens avec "User-Agent", "Referer" (Exemple les liens uqload)
         print(final_list)
         return final_list
     else:

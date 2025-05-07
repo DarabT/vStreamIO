@@ -25,14 +25,22 @@ function parsePythonOutput(output) {
     const startParseTime = Date.now();
 
     // Expression régulière pour extraire les groupes de valeurs dans les tuples
-    const tupleRegex = /\('([^']*)', '([^']*)', '([^']*)', '([^']*)', '([^']*)'\)/g;
+    const tupleRegex = /\('([^']*)', '([^']*)', '([^']*)', '([^']*)', '([^']*)', ('[^']*'|False), ('[^']*'|False)\)/g;
     let match;
     const parsedData = [];
 
     // Extraction des informations en utilisant la regex
     while ((match = tupleRegex.exec(output)) !== null) {
-        const [_, siteName, hostName, language, fileName, streamUrl] = match;
-        parsedData.push({ siteName, hostName, language, fileName, streamUrl });
+        const [_, siteName, hostName, language, fileName, streamUrl, userAgent, referer] = match;
+        parsedData.push([
+            siteName,
+            hostName,
+            language,
+            fileName,
+            streamUrl,
+            userAgent !== "False" ? userAgent.replace(/^'|'$/g, '') : false,
+            referer !== "False" ? referer.replace(/^'|'$/g, '') : false
+        ]);
     }
 
     const endParseTime = Date.now();
@@ -75,11 +83,26 @@ builder.defineStreamHandler(async function(args) {
         const pythonData = parsePythonOutput(pythonOutput);
 
         // Construction des streams pour Stremio
-        const streams = pythonData.map(({ siteName, hostName, language, fileName, streamUrl }) => ({
-            name: `${appName} - ${siteName}`,
-            description: `${fileName}\n${hostName}\n${language}`,
-            url: streamUrl
-        }));
+        const streams = pythonData.map(
+            ([siteName, hostName, language, fileName, streamUrl, userAgent, referer]) => {
+                const behaviorHints = {};
+                if (userAgent || referer) {
+                    behaviorHints.notWebReady = true;
+                    behaviorHints.proxyHeaders = {
+                        request: {}
+                    };
+                    if (userAgent) behaviorHints.proxyHeaders.request["User-Agent"] = userAgent;
+                    if (referer) behaviorHints.proxyHeaders.request["Referer"] = referer;
+                }
+
+                return {
+                    name: `${appName} - ${siteName}`,
+                    description: `${fileName}\n${hostName}\n${language}`,
+                    url: streamUrl,
+                    behaviorHints: Object.keys(behaviorHints).length > 0 ? behaviorHints : undefined
+                };
+            }
+        );
 
         return { streams };
     } catch (error) {
