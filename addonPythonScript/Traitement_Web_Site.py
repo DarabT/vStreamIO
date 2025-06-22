@@ -73,7 +73,7 @@ def vStreamCapsul(args):
     path, separator, params = new_arguments.partition('?')
     params = separator + params
     if "&function=play&" in params:
-        ajouterElementDB(args[1], args[2], args[3], args[4], args[5], args[0]) #save dans la DB
+        ajouterElementDB(args[1], args[2], args[3], args[4], args[5], args[0], args[6]) #save dans la DB
         bLastTraitement = True
         params = re.sub(r'&sCat=\d+&', '&sCat=9999&', params) #remplace pour save dans la bonne tab de sortie
 
@@ -86,14 +86,28 @@ def vStreamCapsul(args):
 
     return bLastTraitement
 
-def getWebSiteName(stored_items):
+def getWebSiteNameAndSiteUrl(stored_items):
     nomDuSite = None
+    siteUrl = None # pour regler le cas des doublons
+
     for item in stored_items:
         site_match = re.search(r"site=([^&]+)", item[0])
+        site_url_match = re.search(r"siteUrl=([^&]+)", item[0])
+
         if site_match:
-            nomDuSite = site_match.group(1) # On récupère le nom de site
+            nomDuSite = site_match.group(1) # on recup le nom du site (et db)
+
+        if site_url_match:
+            raw_url = site_url_match.group(1) # on recup la case siteUrl au complet
+            parts = raw_url.split('%2F') # on extrait tout ce qui %2F => /
+            if len(parts) >= 4:
+                # Recolle tout après le 3ème %2F (/) pour ne pas etre impacter par le cas d'un changement du nom ou .com .org ... etc du site
+                siteUrl = '%2F' + '%2F'.join(parts[3:])
+
+        if nomDuSite and siteUrl:
             break
-    return nomDuSite
+
+    return nomDuSite, siteUrl
 
 def initDB(nomDuSite):
     global parent_dir
@@ -115,7 +129,8 @@ def initDB(nomDuSite):
                                 bSeriesRqst INTEGER,
                                 nSaison INTEGER,
                                 nEpisode INTEGER,
-                                stored_items TEXT
+                                stored_items TEXT,
+                                siteUrl TEXT
                             )
                         ''')
             conn.close()
@@ -123,7 +138,7 @@ def initDB(nomDuSite):
             b_db_already_exist = True
     return b_db_already_exist
 
-def ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison, nEpisode, stored_items):
+def ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison, nEpisode, stored_items, siteUrl):
     b_Return = False
     # Connexion à la base de données
     conn = sqlite3.connect(db_name)
@@ -132,9 +147,9 @@ def ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison, nEpisode, stored_
     # Insertion des données dans la table
     try:
         cursor.execute('''
-            INSERT INTO requests (requestId, bSeriesRqst, nSaison, nEpisode, stored_items)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (requestId, int(bSeriesRqst), nSaison, nEpisode, str(stored_items)))
+            INSERT INTO requests (requestId, bSeriesRqst, nSaison, nEpisode, stored_items, siteUrl)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (requestId, int(bSeriesRqst), nSaison, nEpisode, str(stored_items), siteUrl))
 
         conn.commit()  # Valider la transaction
         b_Return = True
@@ -146,7 +161,7 @@ def ajouterElementDB(db_name, requestId, bSeriesRqst, nSaison, nEpisode, stored_
 
     return b_Return
 
-def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch):
+def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch, siteUrl):
     global db_name
 
     b_Return = False
@@ -171,18 +186,18 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
             # Rechercher les lignes correspondantes
             cursor.execute('''
                 SELECT stored_items FROM requests
-                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-            ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ? AND siteUrl = ?
+            ''', (requestId, int(bSeriesRqst), nSaison, nEpisode, siteUrl))
 
             # Récupérer les résultats
             resultats = cursor.fetchall()
 
-            if not resultats and bSeriesRqst: #cas possible dans le cas ou la premiere recherche avait etait avec une saison differente
+            if (not resultats) and bSeriesRqst: #cas possible dans le cas ou la premiere recherche avait etait avec une saison differente
                 # Rechercher les lignes correspondantes
                 cursor.execute('''
                                 SELECT stored_items FROM requests
-                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-                            ''', (requestId, int(bSeriesRqst), nSaison, str(0))) #ep 0
+                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ? AND siteUrl = ?
+                            ''', (requestId, int(bSeriesRqst), nSaison, str(0), siteUrl)) #ep 0
 
                 # Récupérer les résultats
                 resultats = cursor.fetchall()
@@ -206,18 +221,28 @@ def rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNew
                 #clean des lignes utilisé
                 cursor.execute('''
                                 DELETE FROM requests
-                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-                                ''', (requestId, int(bSeriesRqst), nSaison, nEpisode))
+                                WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ? AND siteUrl = ?
+                                ''', (requestId, int(bSeriesRqst), nSaison, nEpisode, siteUrl))
                 if b_SameSeriesDiffrentSaisonOrEp:
                     cursor.execute('''
                                                     DELETE FROM requests
-                                                    WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ?
-                                                    ''', (requestId, int(bSeriesRqst), nSaison, str(0))) #ep 0
+                                                    WHERE requestId = ? AND bSeriesRqst = ? AND nSaison = ? AND nEpisode = ? AND siteUrl = ?
+                                                    ''', (requestId, int(bSeriesRqst), nSaison, str(0), siteUrl)) #ep 0
                 conn.commit()
                 b_Return = True
             else:
-                # Aucune ligne correspondante trouvée
-                b_Return = False
+                cursor.execute('''
+                                SELECT stored_items FROM requests
+                                WHERE requestId = ? AND bSeriesRqst = ? AND siteUrl = ?
+                                ''', (requestId, int(bSeriesRqst), siteUrl))  # ep 0
+                resultats = cursor.fetchall()
+                if (resultats):
+                    #on deja recu une rqst de cette page web et ce n'etait pas la bonne saison. => Cas de plusieurs pages pour le même site
+                    b_Return = True # on ne fait rien avec cette page
+                    # Exemple de cas, https:\\site\Serie\saison_1 + https:\\site\Serie\saison_2. La recherche nous donne deux pages web (une pour chaque saison)
+                else:
+                    # Aucune ligne correspondante trouvée
+                    b_Return = False
                 nouveau_resultats = []
     except sqlite3.Error as e:
         #print(f"Erreur lors de la recherche dans la base de données : {e}")
@@ -237,15 +262,15 @@ def main():
 
         requestId, bSeriesRqst, nSaison, nEpisode, stored_items, bMainRqstNewSearch = getContructRqst()
 
-        nomDuSite = getWebSiteName(stored_items)
+        nomDuSite, siteUrl = getWebSiteNameAndSiteUrl(stored_items)
         bcheckdbbefore = initDB(nomDuSite)
 
-        const_info_db_play = (db_name, requestId, bSeriesRqst, nSaison, nEpisode)
+        const_info_db_play = (db_name, requestId, bSeriesRqst, nSaison, nEpisode, siteUrl)
 
         if bcheckdbbefore:
             #la base db exist deja checker si la recherche a etait deja faite d'abord
-            bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch)
-            if bOldSearchMatched and OldListedMatched and bMainRqstNewSearch == False:
+            bOldSearchMatched, OldListedMatched = rechercherElementsDB(requestId, bSeriesRqst, nSaison, nEpisode, bMainRqstNewSearch, siteUrl)
+            if bOldSearchMatched and bMainRqstNewSearch == False:
                 stored_items = OldListedMatched
 
         while(bLastTraitement == False and len(stored_items)):
@@ -269,7 +294,7 @@ def main():
                         if not (int(nEpisode) == nEpisodeOfLine):
                             bFlagPopByEp = True # ce n'est pas l'ep rechercher
                     if bFlagPopByEp or bFlagPopBySaison:
-                        ajouterElementDB(db_name, requestId, bSeriesRqst, nSaisonOfLine if bFlagPopBySaison else nSaison, nEpisodeOfLine, stored_items[i])    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
+                        ajouterElementDB(db_name, requestId, bSeriesRqst, nSaisonOfLine if bFlagPopBySaison else nSaison, nEpisodeOfLine, stored_items[i], siteUrl)    #avant de pop l'element on vient le save dans le db, pour repartir de ce point si recherche similaire (differente saison ou diffrent ep)
                         stored_items.pop(i) #on a bien trouver les deux infos n°Saison et n°Episode mais elle ne match pas (on l'eclu de la liste)
 
             # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
