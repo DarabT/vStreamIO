@@ -336,43 +336,53 @@ def enrich_streams_with_headers(final_list): # post traitement des liens avec "U
 
     return enriched_list
 
+
+def main_commun(id):
+    requestId = id
+    args_list = []
+    bcheckdbbefore = initDB("historique")
+    bNeedNewSearch = True
+    sTitre = ''
+    sCat = ''
+
+    if bcheckdbbefore:
+        bNeedNewSearch, sTitre, args_list, sCat = getIfNeedNewSearchDB(requestId)
+
+    if bNeedNewSearch == True or len(args_list) == 0:
+        # input sys
+        # import addonPythonScript.Thread_argv as Thread_argv
+        # Thread_argv.set_custom_argv(sys.argv) #non applicable car oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat) crée des sub process/thread
+        # nouvelle rqst ou demande de maj
+        sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId, sTitre, sCat)
+        print(f"Nouvelle recherche : {id} = {sTitre}")
+
+        sSearchText = sTitre
+        oSearch = cSearch()
+        oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat)
+        stored_items = xbmcplugin.getDirectoryItems()  # Retourne la liste de tous les sites avec et sans résultats
+
+        # Filtrer les éléments inutilisables
+        stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
+
+        # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
+        args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
+    else:
+        print(f"Depuis recherche precedente : {id} = {sTitre}")
+
+    # le save dans la db
+    ajouterElementDB(requestId, sTitre, args_list, bNeedNewSearch, sCat)
+    # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
+    args_list = [item + (bNeedNewSearch,) for item in args_list]
+
+    return args_list
+
+
 def main():
     results = []
     if len(sys.argv) == 3:
         requestId = sys.argv[1]
-        args_list = []
-        bcheckdbbefore = initDB("historique")
-        bNeedNewSearch = True
-        sTitre = ''
-        sCat = ''
 
-        if bcheckdbbefore:
-            bNeedNewSearch, sTitre, args_list, sCat = getIfNeedNewSearchDB(requestId)
-
-        if bNeedNewSearch == True or len(args_list) == 0:
-            #input sys
-            #import addonPythonScript.Thread_argv as Thread_argv
-            #Thread_argv.set_custom_argv(sys.argv) #non applicable car oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat) crée des sub process/thread
-            #nouvelle rqst ou demande de maj
-            sTitre, bSeriesRqst, nSaison, nEpisode, sCat = contructRqst(requestId, sTitre, sCat)
-
-            sSearchText = sTitre
-            oSearch = cSearch()
-            oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat)
-            stored_items = xbmcplugin.getDirectoryItems()  # Retourne la liste de tous les sites avec et sans résultats
-
-            # Filtrer les éléments inutilisables
-            stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
-
-            # Preparation des arg pour exécution en parallèle avec ProcessPoolExecutor
-            args_list = [(requestId, bSeriesRqst, nSaison, nEpisode, item[0]) for item in stored_items]
-        #else:
-            # utilisation du dernier resultat de recherche
-
-        # le save dans la db
-        ajouterElementDB(requestId, sTitre, args_list, bNeedNewSearch, sCat)
-        # Ajout booleen pour indiquer aux sous script s'il faut forcer une nouvelle recherche
-        args_list = [item + (bNeedNewSearch,) for item in args_list]
+        args_list = main_commun(requestId)
 
         if len(args_list) != 0:
             with ProcessPoolExecutor(max_workers=min(max_workers_ProcessPoolExecutor, len(args_list)) )as executor:
