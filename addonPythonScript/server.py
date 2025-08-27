@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from concurrent.futures import ProcessPoolExecutor
+
 import asyncio
 import os
 
@@ -65,6 +66,7 @@ async def process_request(data: RequestData):
 
     print("data.requestId : " +  str(data.requestId))
     print("data.addonKey : " +  str(data.addonKey))
+    print(f"total result recherche pour {data.addonKey} : {len(target_callTraitementWebSite)}")
     print(f"result recherche pour {data.addonKey} : {target_callTraitementWebSite}")
 
     if not target_callTraitementWebSite:
@@ -83,6 +85,7 @@ async def process_request(data: RequestData):
 
         final_list.sort()
         final_list = main.enrich_streams_with_headers(final_list)  # post traitement des liens avec "User-Agent", "Referer" (Exemple les liens uqload)
+        print(f"total repond pour {data.addonKey} : {len(final_list)}")
         print(str(data.addonKey) + " repond : " + str(final_list))
         return {"output": str(final_list)}
 

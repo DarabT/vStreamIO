@@ -102,7 +102,13 @@ def setFluxPlayer(info_flux: List[Tuple[str, str, str, str, str]]) -> None:
 
 def getFluxPlayer():
     global stored_players
-    return stored_players.copy()
+    a = stored_players.copy()
+    clearFluxPlayer()
+    return a
+
+def clearFluxPlayer():
+    global stored_players
+    return stored_players.clear()
  
 def getDirectoryItems():
     #nest pas prévu dans le code d'origine rajouter par DT
