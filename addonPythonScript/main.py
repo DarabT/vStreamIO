@@ -360,6 +360,7 @@ def main_commun(id):
         oSearch = cSearch()
         oSearch.searchGlobal(sSearchText=sSearchText, sCat=sCat)
         stored_items = xbmcplugin.getDirectoryItems()  # Retourne la liste de tous les sites avec et sans résultats
+        xbmcplugin.clearDirectoryItems()
 
         # Filtrer les éléments inutilisables
         stored_items = [item for item in stored_items if "cHome" not in item[0] and "DoNothing" not in item[0]]
