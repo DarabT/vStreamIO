@@ -10,6 +10,8 @@ import main  # Importer `main.py` une seule fois au démarrage du serveur
 # variable global
 # Fonction commune
 common_cache = {}
+get_common_info_async_cmpt = 0
+counter_lock = asyncio.Lock()
 # Pool partagé pour tout le serveur
 max_workers_ProcessPoolExecutor = 0  # auto = nb de coeurs
 if max_workers_ProcessPoolExecutor == 0:
@@ -21,26 +23,36 @@ semaphore = asyncio.Semaphore(max_workers_ProcessPoolExecutor)
 
 
 async def get_common_info_async(id):
-    if id in common_cache:
-        # Si une tâche est en cours, attendons-la
-        future = common_cache[id]
-        if isinstance(future, asyncio.Future):
-            return await future
-        else:
-            return future
+    global common_cache, get_common_info_async_cmpt
+    async with counter_lock:
+        get_common_info_async_cmpt += 1
 
-    # Sinon, lançons le traduction id+recherche
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    common_cache[id] = future
+    try:
+        if id in common_cache:
+            # Si une tâche est en cours, attendons-la
+            future = common_cache[id]
+            if isinstance(future, asyncio.Future):
+                return await future
+            else:
+                return future
 
-    print(f"Recherche info en cours pour {id}…")
-    result = main.main_commun(id)
-    print(f"Résultat de recherche pour {id} : {str(result)}\n")
+        # Sinon, lançons le traduction id+recherche
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        common_cache[id] = future
 
-    future.set_result(result)
-    common_cache[id] = result  # remplaçons la future par le résultat réel
-    return result
+        print(f"Recherche info en cours pour {id}…")
+        result = main.main_commun(id)
+        print(f"Résultat de recherche pour {id} : {str(result)}\n")
+
+        future.set_result(result)
+        common_cache[id] = result  # remplaçons la future par le résultat réel
+        return result
+    finally:
+        async with counter_lock:
+            get_common_info_async_cmpt -= 1
+            if get_common_info_async_cmpt == 0:
+                common_cache.clear()
 
 async def run_traitement_limited(args):
     async with semaphore:  # attend si trop de jobs tournent déjà
