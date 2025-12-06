@@ -166,11 +166,63 @@ Object.entries(sites.sites).forEach(([key, site]) => {
 // Page d’accueil
 app.get("/", (req, res) => {
     const host = req.headers.host;
-    let html = "<h1>vStreamIO Addons</h1><ul>";
+    let html = `
+        <html>
+        <head>
+            <meta charset="utf-8"/>
+            <title>vStreamIO Addons</title>
+            <style>
+                body { font-family: sans-serif; }
+                .addon { margin: 10px 0; }
+                .installed { color: green; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <h1>vStreamIO Addons</h1>
+            <ul id="addons">
+    `;
+
     addons.forEach(({ key, site }) => {
-        html += `<li>${site.label} - <a href="stremio://${host}/${key}/manifest.json">Installer</a></li>`;
+        html += `
+            <li class="addon" id="addon-${key}">
+                ${site.label} -
+                <a href="stremio://${host}/${key}/manifest.json" class="install-link" data-key="${key}">
+                    Installer
+                </a>
+                <span class="status"></span>
+            </li>
+        `;
     });
-    html += "</ul>";
+
+    html += `
+            </ul>
+            <script>
+                document.querySelectorAll(".install-link").forEach(link => {
+                    link.addEventListener("click", (e) => {
+                        const key = e.target.dataset.key;
+                        localStorage.setItem("installed-" + key, "true"); // Sauvegarde
+                        updateStatus(key);
+                    });
+                });
+
+                function updateStatus(key) {
+                    const statusEl = document.querySelector("#addon-" + key + " .status");
+                    if (localStorage.getItem("installed-" + key) === "true") {
+                        statusEl.textContent = " ✅ Installé";
+                        statusEl.className = "status installed";
+                    }
+                }
+
+                // Au chargement de la page → restaure l’état
+                window.addEventListener("DOMContentLoaded", () => {
+                    document.querySelectorAll(".install-link").forEach(link => {
+                        updateStatus(link.dataset.key);
+                    });
+                });
+            </script>
+        </body>
+        </html>
+    `;
     res.send(html);
 });
 
