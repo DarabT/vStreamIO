@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import asynccontextmanager
 
 import asyncio
 import os
@@ -10,8 +11,9 @@ import main  # Importer `main.py` une seule fois au démarrage du serveur
 # variable global
 # Fonction commune
 common_cache = {}
-get_common_info_async_cmpt = 0
-counter_lock = asyncio.Lock()
+cache_lock = asyncio.Lock()
+CACHE_TIMEOUT = 30  # Si ce rqst ID n'est pas refresh depuis X secondes, clean de cette ID dans common_cache
+CACHE_TEMPO = 5 # toute les X secondes reveille la fct pour checker les TIMEOUT des ID
 # Pool partagé pour tout le serveur
 max_workers_ProcessPoolExecutor = 0  # auto = nb de coeurs
 if max_workers_ProcessPoolExecutor == 0:
@@ -21,38 +23,74 @@ process_pool = ProcessPoolExecutor(max_workers=max_workers_ProcessPoolExecutor)
 # Sémaphore globale pour limiter le nombre de tâches CPU en même temps
 semaphore = asyncio.Semaphore(max_workers_ProcessPoolExecutor)
 
+async def cleanup_cache():
+    while True:
+        sleep_time = CACHE_TEMPO
+        now = asyncio.get_event_loop().time()
+        async with cache_lock:
+            times_to_expire = []
+            expired_ids = []
+
+            for id, data in list(common_cache.items()):
+                value = data["value"]
+                last_access = data["last_access"]
+
+                # --- Cas 1 : Future en cours -> on ignore tout pour cette entrée
+                if isinstance(value, asyncio.Future) and not value.done():
+                    continue
+
+                # --- Cas 2 : Calcul expiration
+                age = now - last_access
+                remaining = CACHE_TIMEOUT - age
+
+                if remaining > 0:
+                    # encore valide → utilisé pour optimiser le prochain sleep
+                    times_to_expire.append(remaining)
+                else:
+                    # expiré → à supprimer
+                    expired_ids.append(id)
+
+            # Déterminer temps du prochain réveil
+            if times_to_expire:
+                sleep_time = min(min(times_to_expire), CACHE_TEMPO)
+
+            # Supprimer en une passe
+            for id in expired_ids:
+                print(f"Suppression du cache pour {id} (timeout)")
+                del common_cache[id]
+
+        await asyncio.sleep(sleep_time + 0.01)  # intervalle de nettoyage
 
 async def get_common_info_async(id):
-    global common_cache, get_common_info_async_cmpt
-    async with counter_lock:
-        get_common_info_async_cmpt += 1
+    global common_cache, cache_lock
 
-    try:
+    loop = asyncio.get_running_loop()
+
+    # Accès au cache protégé par le lock
+    async with cache_lock:
         if id in common_cache:
-            # Si une tâche est en cours, attendons-la
-            future = common_cache[id]
-            if isinstance(future, asyncio.Future):
-                return await future
+            data = common_cache[id]
+            data["last_access"] = loop.time()
+            value = data["value"]
+            if isinstance(value, asyncio.Future):
+                future = value
             else:
-                return future
+                return value
+        else:
+            # Pas en cache → créer future
+            future = loop.create_future()
+            common_cache[id] = {"value": future, "last_access": loop.time()}
 
-        # Sinon, lançons le traduction id+recherche
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
-        common_cache[id] = future
-
-        print(f"Recherche info en cours pour {id}…")
-        result = main.main_commun(id)
-        print(f"Résultat de recherche pour {id} : {str(result)}\n")
-
-        future.set_result(result)
-        common_cache[id] = result  # remplaçons la future par le résultat réel
-        return result
-    finally:
-        async with counter_lock:
-            get_common_info_async_cmpt -= 1
-            if get_common_info_async_cmpt == 0:
-                common_cache.clear()
+    # Si future existe, attendre le résultat
+    if isinstance(future, asyncio.Future):
+        # Calcul lourd si la future n’a pas encore de résultat
+        if not future.done():
+            result = await loop.run_in_executor(None, main.main_commun, id)
+            future.set_result(result)
+            # Mettre à jour le cache avec le résultat réel
+            async with cache_lock:
+                common_cache[id] = {"value": result, "last_access": loop.time()}
+        return await future
 
 async def run_traitement_limited(args):
     async with semaphore:  # attend si trop de jobs tournent déjà
@@ -101,16 +139,10 @@ async def process_request(data: RequestData):
         print(str(data.addonKey) + " repond : " + str(final_list))
         return {"output": str(final_list)}
 
-    """
-    result = main.main_rqst_from_server(data.requestId)
-    if result:
-        a = {"output": str(result)}
-        print(a)
-        return {"output": str(result)}
-    else:
-        print("Erreur: ID de requête invalide")
-        return {"output": "Erreur: ID de requête invalide"}
-    """
+@app.on_event("startup")
+async def startup_event():
+    # Lancer la tâche de nettoyage en arrière-plan
+    asyncio.create_task(cleanup_cache())
 
 if __name__ == "__main__":
     import uvicorn

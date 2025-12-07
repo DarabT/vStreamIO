@@ -247,7 +247,7 @@ def getIfNeedNewSearchDB(requestId):
             if LastSearchDone:
                 title = LastSearchDone[4]  # Index de la colonne title
                 Cat = LastSearchDone[7]  # Index de la colonne CAT
-                if (LastRqstDone is None) or (timedelta(minutes=1) < (maintenant - LastRqstDoneTime)):
+                if (LastRqstDone is None) or (timedelta(minutes=1, seconds=30) < (maintenant - LastRqstDoneTime)):
                     LastSearchDoneTime = datetime.strptime(LastSearchDone[1],
                                                          "%Y-%m-%d %H:%M:%S")  # Convertit en objet datetime
                     if (maintenant - LastSearchDoneTime) < timedelta(days=7):
