@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import asynccontextmanager
 
 import asyncio
 import os
@@ -36,7 +35,7 @@ async def cleanup_cache():
                 last_access = data["last_access"]
 
                 # --- Cas 1 : Future en cours -> on ignore tout pour cette entrée
-                if isinstance(value, asyncio.Future) and not value.done():
+                if not value.done():
                     continue
 
                 # --- Cas 2 : Calcul expiration
@@ -61,36 +60,27 @@ async def cleanup_cache():
 
         await asyncio.sleep(sleep_time + 0.01)  # intervalle de nettoyage
 
-async def get_common_info_async(id):
-    global common_cache, cache_lock
-
+async def get_common_info_async(request_id: str):
     loop = asyncio.get_running_loop()
 
-    # Accès au cache protégé par le lock
     async with cache_lock:
-        if id in common_cache:
-            data = common_cache[id]
-            data["last_access"] = loop.time()
-            value = data["value"]
-            if isinstance(value, asyncio.Future):
-                future = value
-            else:
-                return value
-        else:
-            # Pas en cache → créer future
-            future = loop.create_future()
-            common_cache[id] = {"value": future, "last_access": loop.time()}
+        entry = common_cache.get(request_id)
 
-    # Si future existe, attendre le résultat
-    if isinstance(future, asyncio.Future):
-        # Calcul lourd si la future n’a pas encore de résultat
-        if not future.done():
-            result = await loop.run_in_executor(None, main.main_commun, id)
-            future.set_result(result)
-            # Mettre à jour le cache avec le résultat réel
-            async with cache_lock:
-                common_cache[id] = {"value": result, "last_access": loop.time()}
-        return await future
+        if entry:
+            entry["last_access"] = loop.time()
+            return await entry["value"]
+
+        # première requête → on crée la task
+        value = loop.run_in_executor(
+            None, main.main_commun, request_id
+        )
+
+        common_cache[request_id] = {
+            "value": value,
+            "last_access": loop.time(),
+        }
+
+    return await value
 
 async def run_traitement_limited(args):
     async with semaphore:  # attend si trop de jobs tournent déjà
